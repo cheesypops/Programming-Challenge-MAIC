@@ -32,7 +32,7 @@ app = FastAPI(title="Charts API")
 
 app.add_middleware(
 	CORSMiddleware,
-	allow_origins=["*"],
+	allow_origins=["https://analisis-al-instante-con-ia.vercel.app/"],
 	allow_credentials=True,
 	allow_methods=["*"],
 	allow_headers=["*"],
@@ -116,6 +116,7 @@ def _call_llm(summary: str) -> List[Dict[str, Any]]:
 		"]\n\n"
 		"Reglas importantes:\n"
 		"- Devuelve SOLO el JSON, sin comillas de codigo ni texto extra.\n"
+		"- Devuelve entre 4 y 8 sugerencias de graficas.\n"
 		"- Usa nombres de columnas EXACTAMENTE como aparecen en el dataset.\n"
 		"- Los parameters deben ajustarse al chart_type y a Recharts (libreria de React).\n\n"
 		"Estructura esperada de parameters por tipo:\n"
@@ -190,6 +191,35 @@ def chart_data(request: ChartDataRequest) -> ChartDataResponse:
 
 	if not x_axis:
 		raise HTTPException(status_code=400, detail="Missing x_axis in parameters")
+
+	if chart_type == "composed":
+		series = params.get("series")
+		if not isinstance(series, list) or not series:
+			if y_axis:
+				series = [{"y_axis": y_axis, "agg": agg}]
+			else:
+				raise HTTPException(
+					status_code=400,
+					detail="Missing series for composed chart",
+				)
+		agg_map = {}
+		for item in series:
+			item_y = item.get("y_axis")
+			if not item_y:
+				raise HTTPException(
+					status_code=400,
+					detail="Each series must include y_axis",
+				)
+			item_agg = item.get("agg", agg)
+			if item_y in agg_map and agg_map[item_y] != item_agg:
+				raise HTTPException(
+					status_code=400,
+					detail="Duplicate y_axis with different agg in series",
+				)
+			agg_map[item_y] = item_agg
+
+		data = df.groupby(x_axis).agg(agg_map).reset_index()
+		return ChartDataResponse(data=data.to_dict(orient="records"))
 
 	if chart_type == "pie":
 		if not y_axis:

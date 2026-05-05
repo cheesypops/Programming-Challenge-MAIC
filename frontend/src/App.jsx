@@ -1,10 +1,11 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import {
   Area,
   AreaChart,
   Bar,
   BarChart,
+  ComposedChart,
   CartesianGrid,
   Cell,
   Line,
@@ -24,6 +25,17 @@ const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 
 const CHART_COLORS = ['#30cfd0', '#fbbf24', '#f472b6', '#38bdf8', '#4ade80']
+const STORAGE_KEY = 'maic-dashboard-state'
+
+const readStoredState = () => {
+  const raw = localStorage.getItem(STORAGE_KEY)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch (error) {
+    return null
+  }
+}
 
 const CHART_TYPE_MAP = {
   barchart: 'bar',
@@ -65,13 +77,35 @@ const buildErrorMessage = async (response) => {
 function App() {
   const [file, setFile] = useState(null)
   const [dragActive, setDragActive] = useState(false)
-  const [datasetId, setDatasetId] = useState(null)
-  const [suggestions, setSuggestions] = useState([])
-  const [dashboard, setDashboard] = useState([])
-  const [hiddenSuggestionKeys, setHiddenSuggestionKeys] = useState(() => new Set())
+  const [datasetId, setDatasetId] = useState(() => {
+    const parsed = readStoredState()
+    return parsed?.datasetId ?? null
+  })
+  const [suggestions, setSuggestions] = useState(() => {
+    const parsed = readStoredState()
+    return parsed?.suggestions ?? []
+  })
+  const [dashboard, setDashboard] = useState(() => {
+    const parsed = readStoredState()
+    return parsed?.dashboard ?? []
+  })
+  const [hiddenSuggestionKeys, setHiddenSuggestionKeys] = useState(() => {
+    const parsed = readStoredState()
+    return new Set(parsed?.hiddenSuggestionKeys ?? [])
+  })
   const [uploadError, setUploadError] = useState(null)
 
   const fileInputRef = useRef(null)
+
+  useEffect(() => {
+    const payload = {
+      datasetId,
+      suggestions,
+      dashboard,
+      hiddenSuggestionKeys: Array.from(hiddenSuggestionKeys),
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  }, [datasetId, suggestions, dashboard, hiddenSuggestionKeys])
 
   const suggestMutation = useMutation({
     mutationFn: async (selectedFile) => {
@@ -296,7 +330,7 @@ function App() {
       const series = params.series ?? [{ type: 'line', y_axis: yKey }]
       return (
         <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={card.data}>
+          <ComposedChart data={card.data}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey={xKey} />
             <YAxis />
@@ -335,7 +369,7 @@ function App() {
                 />
               )
             })}
-          </LineChart>
+          </ComposedChart>
         </ResponsiveContainer>
       )
     }
@@ -347,7 +381,14 @@ function App() {
           <XAxis dataKey={xKey} />
           <YAxis />
           <Tooltip />
-          <Bar dataKey={yKey} fill={CHART_COLORS[0]} radius={[10, 10, 0, 0]} />
+          <Bar dataKey={yKey} radius={[10, 10, 0, 0]}>
+            {card.data.map((entry, index) => (
+              <Cell
+                key={`${entry?.[xKey] ?? 'bar'}-${index}`}
+                fill={CHART_COLORS[index % CHART_COLORS.length]}
+              />
+            ))}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     )
@@ -356,7 +397,7 @@ function App() {
   return (
     <div className="page">
       <header className="hero">
-        <div className="hero__badge">Dashboard Nocturno</div>
+        <div className="hero__badge">Dashboard Análisis al Instante</div>
         <h1>Explora datos con graficos inteligentes</h1>
         <p>
           Sube un archivo, recibe sugerencias de analisis y construye tu tablero
@@ -375,7 +416,7 @@ function App() {
 
         <div className="dashboard">
           {dashboard.length === 0 && (
-            <div className="empty">
+            <div className="empty empty--full">
               Cuando agregues graficos, apareceran aqui.
             </div>
           )}
