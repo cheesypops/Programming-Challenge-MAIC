@@ -32,7 +32,7 @@ app = FastAPI(title="Charts API")
 
 app.add_middleware(
 	CORSMiddleware,
-	allow_origins=["https://analisis-al-instante-con-ia.vercel.app/"],
+	allow_origins=["https://analisis-al-instante-con-ia.vercel.app"],
 	allow_credentials=True,
 	allow_methods=["*"],
 	allow_headers=["*"],
