@@ -164,7 +164,7 @@ function App() {
             ? {
                 ...card,
                 loading: false,
-                error: error?.message ?? 'No se pudo cargar el grafico',
+                error: error?.message ?? 'No se pudo cargar el gráfico',
               }
             : card,
         ),
@@ -397,8 +397,8 @@ function App() {
   return (
     <div className="page">
       <header className="hero">
-        <div className="hero__badge">Dashboard Análisis al Instante</div>
-        <h1>Explora datos con graficos inteligentes</h1>
+        <div className="hero__badge">Análisis Inteligente al Instante</div>
+        <h1>Explora datos con gráficos proporcionados po IA</h1>
         <p>
           Sube un archivo, recibe sugerencias de analisis y construye tu tablero
           en segundos.
@@ -409,7 +409,7 @@ function App() {
         <div className="panel__header">
           <div>
             <h2>Dashboard</h2>
-            <p>Visualiza las metricas seleccionadas.</p>
+            <p>Visualiza las métricas seleccionadas.</p>
           </div>
           <div className="chip chip--accent">{dashboard.length} graficos</div>
         </div>
@@ -417,7 +417,7 @@ function App() {
         <div className="dashboard">
           {dashboard.length === 0 && (
             <div className="empty empty--full">
-              Cuando agregues graficos, apareceran aqui.
+              Cuando agregues gráficos, apareceran aquí.
             </div>
           )}
           {dashboard.map((card) => (
@@ -430,7 +430,7 @@ function App() {
                     type="button"
                     className="icon-button"
                     onClick={() => handleRemoveChart(card.id)}
-                    aria-label="Eliminar grafico"
+                    aria-label="Eliminar gráfico"
                   >
                     ✕
                   </button>
@@ -505,8 +505,8 @@ function App() {
       <section className="panel">
         <div className="panel__header">
           <div>
-            <h2>Tarjetas de Analisis</h2>
-            <p>Selecciona los graficos que deseas agregar al tablero.</p>
+            <h2>Tarjetas de Análisis</h2>
+            <p>Selecciona los gráficos que deseas agregar al tablero.</p>
           </div>
           <div className="chip">
             {suggestions.length - hiddenSuggestionKeys.size} sugerencias
@@ -515,7 +515,7 @@ function App() {
 
         <div className="cards">
           {suggestions.filter((suggestion) => !hiddenSuggestionKeys.has(suggestionKey(suggestion))).length === 0 && (
-            <div className="empty">Aun no hay sugerencias por mostrar.</div>
+            <div className="empty">Aún no hay sugerencias por mostrar.</div>
           )}
           {suggestions
             .filter((suggestion) => !hiddenSuggestionKeys.has(suggestionKey(suggestion)))
