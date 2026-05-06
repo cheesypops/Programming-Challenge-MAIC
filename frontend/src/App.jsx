@@ -398,7 +398,7 @@ function App() {
     <div className="page">
       <header className="hero">
         <div className="hero__badge">Análisis Inteligente al Instante</div>
-        <h1>Explora datos con gráficos proporcionados po IA</h1>
+        <h1>Explora datos con gráficos proporcionados por IA</h1>
         <p>
           Sube un archivo, recibe sugerencias de analisis y construye tu tablero
           en segundos.
@@ -411,7 +411,7 @@ function App() {
             <h2>Dashboard</h2>
             <p>Visualiza las métricas seleccionadas.</p>
           </div>
-          <div className="chip chip--accent">{dashboard.length} graficos</div>
+          <div className="chip chip--accent">{dashboard.length} gráficos</div>
         </div>
 
         <div className="dashboard">
