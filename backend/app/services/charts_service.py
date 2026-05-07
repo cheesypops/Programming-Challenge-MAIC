@@ -1,0 +1,185 @@
+import io
+import json
+from typing import Any, Dict, List
+
+import pandas as pd
+from fastapi import HTTPException, UploadFile
+
+try:
+    from google import genai
+except Exception:  # pragma: no cover - optional dependency until user adds it
+    genai = None
+
+try:
+    from google.api_core import exceptions as google_exceptions
+except Exception:  # pragma: no cover - optional dependency until user adds it
+    google_exceptions = None
+
+from app.core.config import settings
+
+
+def load_dataframe(file: UploadFile) -> pd.DataFrame:
+    filename = (file.filename or "").lower()
+    content = file.file.read()
+    if filename.endswith(".csv"):
+        return pd.read_csv(io.BytesIO(content))
+    if filename.endswith(".xlsx") or filename.endswith(".xls"):
+        return pd.read_excel(io.BytesIO(content))
+    raise HTTPException(status_code=400, detail="Unsupported file type")
+
+
+def dataset_summary(df: pd.DataFrame) -> str:
+    buffer = io.StringIO()
+    df.info(buf=buffer)
+    info_text = buffer.getvalue()
+    describe_text = df.describe(include="all").fillna("NA").to_string()
+    columns = df.dtypes.astype(str).to_dict()
+    return (
+        "Columns and dtypes:\n"
+        f"{json.dumps(columns, indent=2)}\n\n"
+        "Info:\n"
+        f"{info_text}\n"
+        "Describe:\n"
+        f"{describe_text}"
+    )
+
+
+def call_llm(summary: str) -> List[Dict[str, Any]]:
+    api_key = settings.google_api_key
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Missing GOOGLE_API_KEY")
+    if genai is None:
+        raise HTTPException(
+            status_code=500,
+            detail="google-genai package is not installed",
+        )
+
+    client = genai.Client(api_key=api_key)
+    model_name = settings.google_model
+    prompt = (
+        "Eres un analista de datos senior. Con base en el resumen del dataset, genera SOLO un JSON valido "
+        "(sin markdown, sin ``` y sin texto adicional). La respuesta DEBE ser un arreglo de objetos "
+        "con esta estructura base:\n\n"
+        "[\n"
+        "  {\n"
+        "    \"title\": \"Titulo del grafico\",\n"
+        "    \"chart_type\": \"bar|line|pie|scatter|area|composed\",\n"
+        "    \"parameters\": { ... },\n"
+        "    \"insight\": \"Analisis breve en espanol de lo que plantea el gráfico en base a los datos\"\n"
+        "  }\n"
+        "]\n\n"
+        "Reglas importantes:\n"
+        "- Devuelve SOLO el JSON, sin comillas de codigo ni texto extra.\n"
+        "- Identifica los patrones o relaciones mas interesantes en los datos para poder recomendar graficas.\n"
+        "- Devuelve entre 3 y 5 sugerencias de graficas.\n"
+        "- Usa nombres de columnas EXACTAMENTE como aparecen en el dataset.\n"
+        "- Los parameters deben ajustarse al chart_type y a Recharts (libreria de React).\n\n"
+        "Estructura esperada de parameters por tipo:\n"
+        "- bar|line|area: {\"x_axis\": \"columna\", \"y_axis\": \"columna\", "
+        "  \"group_by\": \"columna opcional\", \"agg\": \"sum|mean|count|min|max opcional\"}\n"
+        "- scatter: {\"x_axis\": \"columna\", \"y_axis\": \"columna\", "
+        "  \"size\": \"columna opcional\", \"color\": \"columna opcional\"}\n"
+        "- pie: {\"name_key\": \"columna categoria\", \"value_key\": \"columna valor\", "
+        "  \"agg\": \"sum|mean|count|min|max opcional\"}\n"
+        "- composed: {\"x_axis\": \"columna\", \"series\": ["
+        "    {\"type\": \"bar|line|area\", \"y_axis\": \"columna\", "
+        "     \"agg\": \"sum|mean|count|min|max opcional\"}"
+        "  ], \"group_by\": \"columna opcional\"}\n\n"
+        "Siempre incluye solo los fields necesarios para ese chart_type.\n\n"
+        f"Resumen del dataset:\n{summary}"
+    )
+    try:
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+        )
+    except Exception as exc:
+        if google_exceptions and isinstance(exc, google_exceptions.ResourceExhausted):
+            raise HTTPException(
+                status_code=429,
+                detail="LLM rate limit exceeded",
+            )
+        exc_text = str(exc)
+        if "429" in exc_text or "RESOURCE_EXHAUSTED" in exc_text.upper():
+            raise HTTPException(
+                status_code=429,
+                detail="LLM rate limit exceeded",
+            )
+        raise HTTPException(status_code=500, detail=f"LLM request failed: {exc}")
+    text = response.text.strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail=f"Invalid JSON from LLM: {text}")
+    if not isinstance(parsed, list):
+        raise HTTPException(status_code=500, detail="LLM response is not a JSON array")
+    return parsed
+
+
+def build_chart_data(
+    df: pd.DataFrame,
+    params: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    chart_type = params.get("chart_type")
+    x_axis = params.get("x_axis")
+    y_axis = params.get("y_axis")
+    group_by = params.get("group_by")
+    agg = params.get("agg", "sum")
+
+    if not x_axis:
+        raise HTTPException(status_code=400, detail="Missing x_axis in parameters")
+
+    if chart_type == "composed":
+        series = params.get("series")
+        if not isinstance(series, list) or not series:
+            if y_axis:
+                series = [{"y_axis": y_axis, "agg": agg}]
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Missing series for composed chart",
+                )
+        agg_map: Dict[str, str] = {}
+        for item in series:
+            item_y = item.get("y_axis")
+            if not item_y:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Each series must include y_axis",
+                )
+            item_agg = item.get("agg", agg)
+            if item_y in agg_map and agg_map[item_y] != item_agg:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Duplicate y_axis with different agg in series",
+                )
+            agg_map[item_y] = item_agg
+
+        data = df.groupby(x_axis).agg(agg_map).reset_index()
+        return data.to_dict(orient="records")
+
+    if chart_type == "pie":
+        if not y_axis:
+            raise HTTPException(status_code=400, detail="Missing y_axis for pie chart")
+        data = (
+            df.groupby(x_axis)[y_axis]
+            .agg(agg)
+            .reset_index()
+            .rename(columns={x_axis: "name", y_axis: "value"})
+        )
+        return data.to_dict(orient="records")
+
+    if y_axis:
+        if group_by:
+            data = (
+                df.groupby([x_axis, group_by])[y_axis]
+                .agg(agg)
+                .reset_index()
+            )
+        else:
+            data = df.groupby(x_axis)[y_axis].agg(agg).reset_index()
+        return data.to_dict(orient="records")
+
+    data = df[[x_axis]].dropna().value_counts().reset_index()
+    data.columns = [x_axis, "count"]
+    return data.to_dict(orient="records")
