@@ -113,6 +113,11 @@
   background: rgba(14, 116, 144, 0.25);
 }
 
+.dropzone--disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .dropzone__icon {
   font-size: 24px;
   margin-bottom: 8px;
